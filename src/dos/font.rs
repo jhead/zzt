@@ -15,7 +15,7 @@ pub struct DosFont {
 impl DosFont {
     pub fn new_8bit(image: BinaryAsset) -> DosFont {
         DosFont {
-            image: image,
+            image,
             num_columns: 16,
             num_rows: 16,
             char_width: 8,
@@ -61,8 +61,10 @@ impl Into<Image> for DosFont {
             let y_offset = y - (atlas_row * self.char_height);
             let byte_pos_in_file = ((atlas_sprite_index * self.bytes_per_char) + y_offset) as usize;
 
-            // Extract boolean luma from bit flag baesd on x position in sprite
-            let luma_binary_mask = self.image.data[byte_pos_in_file] >> (x % 8);
+            // Extract boolean luma from bit flag based on x position in sprite
+            // Left-most bit corresponds to left-most x position
+            let bit_offset = 7 - (x % 8);
+            let luma_binary_mask = self.image.data[byte_pos_in_file] >> bit_offset;
 
             // On bit == white, off bit == black
             let luma_binary = (luma_binary_mask & 1) == 1;

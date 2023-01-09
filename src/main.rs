@@ -1,79 +1,56 @@
-use bevy::{prelude::*, sprite::Material2dPlugin};
-use zzt::{
-    binary::{BinaryAsset, BinaryAssetPlugin},
-    char::CharacterMaterial,
-    font::DosFont,
-};
-use zzt::{char::Char, state::State};
+use bevy::{prelude::*};
+use bevy_pixel_camera::{PixelBorderPlugin, PixelCameraBundle, PixelCameraPlugin};
+
+use zzt::dos::{DosPlugin, Terminal, TerminalChar};
+use zzt::state::State;
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
-        .add_plugin(Material2dPlugin::<CharacterMaterial>::default())
-        .add_plugin(BinaryAssetPlugin)
+        .add_plugin(PixelCameraPlugin)
+        .add_plugin(PixelBorderPlugin {
+            color: Color::BLACK,
+        })
+        .add_plugin(DosPlugin)
         .init_resource::<State>()
         .add_startup_system(startup)
-        .add_system(system_build_fonts)
         .add_system(system_build_tiles)
         .run();
 }
 
-fn startup(mut state: ResMut<State>, mut commands: Commands, asset_server: Res<AssetServer>) {
-    commands.spawn(Camera2dBundle::default());
-    state.font_handle = asset_server.load("CP437.F08");
-}
-
-fn system_build_fonts(
-    files: ResMut<Assets<BinaryAsset>>,
-    images: ResMut<Assets<Image>>,
-    mut state: ResMut<State>,
-    mut texture_atlases: ResMut<Assets<TextureAtlas>>,
-) {
-    if state.font_loaded {
-        return;
+fn startup(mut commands: Commands, mut windows: ResMut<Windows>) {
+    if let Some(window) = windows.get_primary_mut() {
+        window.set_resolution(320. * 3., 200. * 3.);
     }
 
-    let font_asset = files.get(&state.font_handle);
-    if let Some(font_asset) = font_asset {
-        // TODO: is clone necessary?
-        let font = DosFont::new_8bit(font_asset.to_owned());
-
-        let atlas = font.build_texture_atlas(images);
-        state.char_atlas = texture_atlases.add(atlas);
-        state.font_loaded = true;
-    }
+    commands.spawn(PixelCameraBundle::from_resolution(320, 200));
 }
 
 fn system_build_tiles(
-    texture_atlases: ResMut<Assets<TextureAtlas>>,
+    mut term: ResMut<Terminal>,
     mut state: ResMut<State>,
-    mut commands: Commands,
-    mut materials: ResMut<Assets<CharacterMaterial>>,
-    mut meshes: ResMut<Assets<Mesh>>,
+    mut camera_query: Query<&mut Transform, With<Camera>>,
 ) {
-    if state.tiles_added || !state.font_loaded {
+    if state.tiles_added {
         return;
     }
 
-    let map_size: [u32; 2] = [40, 25];
+    let mut camera = camera_query.single_mut();
+    let camera_translation = term.camera_translation();
+    camera.translation.x = camera_translation.x;
+    camera.translation.y = camera_translation.y;
 
-    for x in 0..map_size[0] {
-        for y in 0..map_size[1] {
-            let tile_pos = Vec2 {
-                x: (x * 8) as f32,
-                y: (y * 8) as f32,
+    for x in 0..term.size.x {
+        for y in 0..term.size.y {
+            let code = (((y * term.size.x) + x) % 255) as u8;
+            let char = TerminalChar {
+                code,
+                loc: UVec3 { x, y, z: 0 },
+                background: Color::NONE,
+                foreground: Color::WHITE,
             };
 
-            let char = Char {
-                code: (((y * 40) + x) % 255) as u8,
-                color_fg: Color::WHITE,
-                color_bg: Color::NONE,
-                transform: Transform::from_xyz(tile_pos.x, tile_pos.y, 0.),
-            };
-
-            let char_bundle =
-                char.create_bundle(&state, &texture_atlases, &mut materials, &mut meshes);
-            commands.spawn(char_bundle);
+            term.add_char(char, None);
         }
     }
 
